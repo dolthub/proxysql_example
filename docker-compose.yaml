@@ -4,40 +4,40 @@ services:
   dolt-primary:
     image: dolthub/dolt-sql-server:latest
     container_name: dolt-primary
-    environment:
-      DOLT_PASSWORD: root
+    # environment:
+    #   DOLT_PASSWORD: root
     ports:
       - "3307:3306"  # exposes primary on localhost:3307
     volumes:
       - dolt_primary_data:/var/lib/dolt
+      - dolt_primary_dolt_config:/etc/dolt/doltcfg.d
+      - dolt_primary_server_config:/etc/dolt/servercfg.d
+      - ./primary-init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
     command: [
-      "dolt", "sql-server",
-      "--user", "root",
-      "--password", "root",
-      "--host", "0.0.0.0",
-      "--port", "3306"
+      "-l", "debug",
     ]
 
-  dolt-replica:
+  dolt-replica-1:
     image: dolthub/dolt-sql-server:latest
-    container_name: dolt-replica
-    depends_on:
-      - dolt-primary
-    environment:
-      DOLT_PASSWORD: root
+    container_name: dolt-replica-1
+    # environment:
+    #   DOLT_PASSWORD: root
     ports:
-      - "3308:3306"  # exposes replica on localhost:3308
+      - "3308:3306"  # exposes primary on localhost:3308
     volumes:
-      - dolt_replica_data:/var/lib/dolt
-    entrypoint: ["/bin/sh", "-c"]
-    command: >
-      "
-      sleep 5 && 
-      dolt clone http://dolt-primary:80/default replica &&
-      cd replica &&
-      dolt sql-server --user root --password root --host 0.0.0.0 --port 3306
-      "
+      - dolt_replica_1_data:/var/lib/dolt
+      - dolt_replica_1_dolt_config:/etc/dolt/doltcfg.d
+      - dolt_replica_1_server_config:/etc/dolt/servercfg.d
+      - ./replica-1-init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    command: [
+      "-l", "debug",
+    ]
 
 volumes:
   dolt_primary_data:
-  dolt_replica_data:
+  dolt_primary_dolt_config:
+  dolt_primary_server_config:
+
+  dolt_replica_1_data:
+  dolt_replica_1_dolt_config:
+  dolt_replica_1_server_config:
