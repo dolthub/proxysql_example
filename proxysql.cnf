@@ -1,0 +1,68 @@
+datadir = "/var/lib/proxysql"
+
+admin_variables =
+{
+    admin_credentials = "admin:admin"
+    mysql_ifaces = "0.0.0.0:6032"
+}
+
+mysql_variables =
+{
+    threads = 2
+    max_connections = 2048
+    default_query_delay = 0
+    default_query_timeout = 36000000
+    poll_timeout = 2000
+    interfaces = "0.0.0.0:6033"
+    default_schema = "default"
+}
+
+mysql_servers =
+(
+    {
+        address = "dolt-primary"
+        port = 3306
+        hostgroup = 10
+        max_connections = 100
+    },
+    {
+        address = "dolt-replica-1"
+        port = 3306
+        hostgroup = 20
+        max_connections = 100
+    }
+)
+
+mysql_users =
+(
+    {
+        username = "primary_user"
+        password = "password"
+        default_hostgroup = 10
+        active = 1
+    },
+        {
+        username = "replica_1_user"
+        password = "password"
+        default_hostgroup = 20
+        active = 1
+    }
+)
+
+mysql_query_rules =
+(
+    {
+        rule_id = 1
+        active = 1
+        match_pattern = "^SELECT .*"
+        destination_hostgroup = 20
+        apply = 1
+    },
+    {
+        rule_id = 2
+        active = 1
+        match_pattern = ".*"
+        destination_hostgroup = 10
+        apply = 1
+    }
+)

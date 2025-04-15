@@ -4,8 +4,6 @@ services:
   dolt-primary:
     image: dolthub/dolt-sql-server:latest
     container_name: dolt-primary
-    # environment:
-    #   DOLT_PASSWORD: root
     ports:
       - "3307:3306"  # exposes primary on localhost:3307
     volumes:
@@ -17,12 +15,14 @@ services:
     command: [
       "-l", "debug",
     ]
+    networks:
+      - replication_example
 
   dolt-replica-1:
     image: dolthub/dolt-sql-server:latest
+    depends_on:
+      - dolt-primary
     container_name: dolt-replica-1
-    # environment:
-    #   DOLT_PASSWORD: root
     ports:
       - "3308:3306"  # exposes primary on localhost:3308
     volumes:
@@ -35,6 +35,23 @@ services:
       "--readonly",
       "-l", "debug",
     ]
+    networks:
+      - replication_example
+
+  proxysql:
+    image: proxysql/proxysql:latest
+    container_name: proxysql
+    ports:
+      - "6033:6033"  # client port
+      - "6034:6032"  # admin interface
+    depends_on:
+      - dolt-primary
+      - dolt-replica-1
+    volumes:
+      - ./proxysql.cnf:/etc/proxysql.cnf:ro
+    command: ["proxysql", "--initial", "-f", "-c", "/etc/proxysql.cnf"]
+    networks:
+      - replication_example
 
 volumes:
   dolt_primary_data:
@@ -44,3 +61,7 @@ volumes:
   dolt_replica_1_data:
   dolt_replica_1_dolt_config:
   dolt_replica_1_server_config:
+
+networks:
+  replication_example:
+    driver: bridge
