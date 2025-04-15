@@ -49,6 +49,7 @@ services:
       - dolt-replica-1
     volumes:
       - ./proxysql.cnf:/etc/proxysql.cnf:ro
+      - proxysql_data:/var/lib/proxysql
     command: ["proxysql", "--initial", "-f", "-c", "/etc/proxysql.cnf"]
     networks:
       - replication_example
@@ -61,6 +62,8 @@ volumes:
   dolt_replica_1_data:
   dolt_replica_1_dolt_config:
   dolt_replica_1_server_config:
+
+  proxysql_data:
 
 networks:
   replication_example:
