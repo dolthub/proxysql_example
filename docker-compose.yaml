@@ -70,24 +70,25 @@ services:
   #   networks:
   #     - replication_example
 
-  # proxysql:
-  #   image: proxysql/proxysql:latest
-  #   container_name: proxysql
-  #   ports:
-  #     - "6033:6033"  # client port
-  #     - "6032:6032"  # admin interface
-  #   depends_on:
-  #     - mysql-primary
-  #     - mysql-replica
-  #   # depends_on:
-  #   #   - dolt-primary
-  #   #   - dolt-replica-1
-  #   volumes:
-  #     - ./proxysql.cnf:/etc/proxysql.cnf:ro
-  #     - proxysql_data:/var/lib/proxysql
-  #   command: ["proxysql", "--initial", "-f", "-c", "/etc/proxysql.cnf"]
-  #   networks:
-  #     - replication_example
+  proxysql:
+    image: proxysql/proxysql:latest
+    container_name: proxysql
+    ports:
+      - "6033:6033"  # client port
+      - "6032:6032"  # admin interface
+    depends_on:
+      - mysql-primary
+      - mysql-replica
+    # depends_on:
+    #   - dolt-primary
+    #   - dolt-replica-1
+    volumes:
+#      - ./proxysql.cnf:/etc/proxysql.cnf:ro
+      - ./proxysql-mysql.cnf:/etc/proxysql.cnf:ro
+      - proxysql_data:/var/lib/proxysql
+    command: ["proxysql", "--initial", "-f", "-c", "/etc/proxysql.cnf"]
+    networks:
+     - replication_example
 
 volumes:
   # dolt_primary_data:
@@ -100,7 +101,7 @@ volumes:
 
   mysql_primary_data:
   mysql_replica_data:
-  # proxysql_data:
+  proxysql_data:
 
 networks:
   replication_example:
