@@ -64,7 +64,7 @@ services:
      - dolt_replica_1_server_config:/etc/dolt/servercfg.d
      - ./replica-1-init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
    command: [
-     "--readonly",
+#     "--readonly",
      "-l", "debug",
    ]
    networks:
