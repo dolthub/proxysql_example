@@ -14,7 +14,7 @@ mysql_variables =
     default_query_timeout = 36000000
     poll_timeout = 2000
     interfaces = "0.0.0.0:6033"
-    default_schema = "default"
+    default_schema = "read_replication_example"
 }
 
 mysql_servers =
@@ -36,28 +36,10 @@ mysql_servers =
 mysql_users =
 (
     {
-        username = "primary_user"
-        password = "password"
+        username = "root"
+        password = "root"
         default_hostgroup = 10
         active = 1
-        backend = 1
-        frontend = 1
-    },
-    {
-        username = "replica_1_user"
-        password = "password"
-        default_hostgroup = 20
-        active = 1
-        backend = 1
-        frontend = 1
-    },
-        {
-        username = "dustin"
-        password = "password"
-        default_hostgroup = 20
-        active = 1
-        frontend = 1
-        backend = 1
     }
 )
 

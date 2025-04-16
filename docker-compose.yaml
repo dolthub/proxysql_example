@@ -1,74 +1,74 @@
 version: '3.9'
 
 services:
-  mysql-primary:
-    image: mysql:8.0
-    container_name: mysql-primary
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-      MYSQL_DATABASE: testdb
-    ports:
-      - "3307:3306"
-    command: --server-id=1 --log-bin=mysql-bin --gtid-mode=ON --enforce-gtid-consistency=ON --binlog-format=ROW
-    volumes:
-      - mysql_primary_data:/var/lib/mysql
-    networks:
-      - replication_example
+#  mysql-primary:
+#    image: mysql:8.0
+#    container_name: mysql-primary
+#    restart: always
+#    environment:
+#      MYSQL_ROOT_PASSWORD: root
+#      MYSQL_DATABASE: testdb
+#    ports:
+#      - "3307:3306"
+#    command: --server-id=1 --log-bin=mysql-bin --gtid-mode=ON --enforce-gtid-consistency=ON --binlog-format=ROW
+#    volumes:
+#      - mysql_primary_data:/var/lib/mysql
+#    networks:
+#      - replication_example
+#
+#  mysql-replica:
+#    image: mysql:8.0
+#    container_name: mysql-replica
+#    restart: always
+#    environment:
+#     MYSQL_ROOT_PASSWORD: root
+#     MYSQL_DATABASE: testdb
+#    ports:
+#     - "3308:3306"
+#    depends_on:
+#     - mysql-primary
+#    command: --server-id=2 --relay-log=relay-bin --log-bin=mysql-bin --read-only=1 --gtid-mode=ON --enforce-gtid-consistency=ON --binlog-format=ROW
+#    volumes:
+#     - mysql_replica_data:/var/lib/mysql
+#    networks:
+#     - replication_example
 
-  mysql-replica:
-    image: mysql:8.0
-    container_name: mysql-replica
-    restart: always
-    environment:
-     MYSQL_ROOT_PASSWORD: root
-     MYSQL_DATABASE: testdb
-    ports:
-     - "3308:3306"
-    depends_on:
-     - mysql-primary
-    command: --server-id=2 --relay-log=relay-bin --log-bin=mysql-bin --read-only=1 --gtid-mode=ON --enforce-gtid-consistency=ON --binlog-format=ROW
-    volumes:
-     - mysql_replica_data:/var/lib/mysql
-    networks:
+  dolt-primary:
+   image: dolthub/dolt-sql-server:latest
+   container_name: dolt-primary
+   ports:
+     - "3307:3306"  # exposes primary on localhost:3307
+   volumes:
+     - /Users/dustin/.dolt/creds:/root/.dolt/creds
+     - dolt_primary_data:/var/lib/dolt
+     - dolt_primary_dolt_config:/etc/dolt/doltcfg.d
+     - dolt_primary_server_config:/etc/dolt/servercfg.d
+     - ./primary-init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+   command: [
+     "-l", "debug",
+   ]
+   networks:
      - replication_example
 
-  # dolt-primary:
-  #   image: dolthub/dolt-sql-server:latest
-  #   container_name: dolt-primary
-  #   ports:
-  #     - "3307:3306"  # exposes primary on localhost:3307
-  #   volumes:
-  #     - /Users/dustin/.dolt/creds:/root/.dolt/creds
-  #     - dolt_primary_data:/var/lib/dolt
-  #     - dolt_primary_dolt_config:/etc/dolt/doltcfg.d
-  #     - dolt_primary_server_config:/etc/dolt/servercfg.d
-  #     - ./primary-init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
-  #   command: [
-  #     "-l", "debug",
-  #   ]
-  #   networks:
-  #     - replication_example
-
-  # dolt-replica-1:
-  #   image: dolthub/dolt-sql-server:latest
-  #   depends_on:
-  #     - dolt-primary
-  #   container_name: dolt-replica-1
-  #   ports:
-  #     - "3308:3306"  # exposes primary on localhost:3308
-  #   volumes:
-  #     - /Users/dustin/.dolt/creds:/root/.dolt/creds
-  #     - dolt_replica_1_data:/var/lib/dolt
-  #     - dolt_replica_1_dolt_config:/etc/dolt/doltcfg.d
-  #     - dolt_replica_1_server_config:/etc/dolt/servercfg.d
-  #     - ./replica-1-init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
-  #   command: [
-  #     "--readonly",
-  #     "-l", "debug",
-  #   ]
-  #   networks:
-  #     - replication_example
+  dolt-replica-1:
+   image: dolthub/dolt-sql-server:latest
+   depends_on:
+     - dolt-primary
+   container_name: dolt-replica-1
+   ports:
+     - "3308:3306"  # exposes primary on localhost:3308
+   volumes:
+     - /Users/dustin/.dolt/creds:/root/.dolt/creds
+     - dolt_replica_1_data:/var/lib/dolt
+     - dolt_replica_1_dolt_config:/etc/dolt/doltcfg.d
+     - dolt_replica_1_server_config:/etc/dolt/servercfg.d
+     - ./replica-1-init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+   command: [
+     "--readonly",
+     "-l", "debug",
+   ]
+   networks:
+     - replication_example
 
   proxysql:
     image: proxysql/proxysql:latest
@@ -76,31 +76,31 @@ services:
     ports:
       - "6033:6033"  # client port
       - "6032:6032"  # admin interface
+#    depends_on:
+#      - mysql-primary
+#      - mysql-replica
     depends_on:
-      - mysql-primary
-      - mysql-replica
-    # depends_on:
-    #   - dolt-primary
-    #   - dolt-replica-1
+      - dolt-primary
+      - dolt-replica-1
     volumes:
-#      - ./proxysql.cnf:/etc/proxysql.cnf:ro
-      - ./proxysql-mysql.cnf:/etc/proxysql.cnf:ro
+      - ./proxysql.cnf:/etc/proxysql.cnf:ro
+#      - ./proxysql-mysql.cnf:/etc/proxysql.cnf:ro
       - proxysql_data:/var/lib/proxysql
     command: ["proxysql", "--initial", "-f", "-c", "/etc/proxysql.cnf"]
     networks:
      - replication_example
 
 volumes:
-  # dolt_primary_data:
-  # dolt_primary_dolt_config:
-  # dolt_primary_server_config:
+  dolt_primary_data:
+  dolt_primary_dolt_config:
+  dolt_primary_server_config:
 
-  # dolt_replica_1_data:
-  # dolt_replica_1_dolt_config:
-  # dolt_replica_1_server_config:
+  dolt_replica_1_data:
+  dolt_replica_1_dolt_config:
+  dolt_replica_1_server_config:
 
-  mysql_primary_data:
-  mysql_replica_data:
+#  mysql_primary_data:
+#  mysql_replica_data:
   proxysql_data:
 
 networks:

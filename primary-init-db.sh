@@ -6,8 +6,8 @@ dolt config --global --add user.email "myprimary@me.com"
 dolt creds use nq8pmsqpt6thjvi6hbtj6jprt25msddjiu62dpdp446009rsebs0
 
 dolt sql <<-EOSQL
-    CREATE USER primary_user@'%' IDENTIFIED BY 'password';
-    GRANT ALL ON *.* TO primary_user@'%';
+    CREATE USER root@'%' IDENTIFIED BY 'root';
+    GRANT ALL ON *.* TO root@'%';
     CREATE USER 'monitor'@'%' IDENTIFIED BY 'monitor';
     GRANT SELECT ON sys.* TO 'monitor'@'%';
     GRANT SELECT ON performance_schema.* TO 'monitor'@'%';
