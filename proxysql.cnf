@@ -20,13 +20,13 @@ mysql_variables =
 mysql_servers =
 (
     {
-        address = "dolt-primary"
+        address = "primary"
         port = 3306
         hostgroup = 10
         max_connections = 100
     },
     {
-        address = "dolt-replica-1"
+        address = "replica-1"
         port = 3306
         hostgroup = 20
         max_connections = 100

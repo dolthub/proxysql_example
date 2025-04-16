@@ -3,7 +3,7 @@ set -e
 
 dolt config --global --add user.name "myprimary"
 dolt config --global --add user.email "myprimary@me.com"
-dolt creds use nq8pmsqpt6thjvi6hbtj6jprt25msddjiu62dpdp446009rsebs0
+dolt creds use "$DOLT_CREDS_PUBLIC_KEY"
 
 dolt sql <<-EOSQL
     CREATE USER root@'%' IDENTIFIED BY 'root';

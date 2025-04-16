@@ -1,0 +1,60 @@
+version: '3.9'
+
+services:
+  proxysql:
+    image: proxysql/proxysql:latest
+    container_name: proxysql
+    ports:
+      - "6033:6033"  # client port
+      - "6032:6032"  # admin interface
+    depends_on:
+      - primary
+      - replica-1
+    volumes:
+      - ./proxysql.cnf:/etc/proxysql.cnf:ro
+      - proxysql_data:/var/lib/proxysql
+    command: ["proxysql", "--initial", "-f", "-c", "/etc/proxysql.cnf"]
+    networks:
+      - replication_example
+
+  primary:
+    image: mysql:8.0
+    container_name: primary
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: read_replication_example
+    ports:
+      - "3307:3306"
+    command: --server-id=1 --log-bin=mysql-bin --gtid-mode=ON --enforce-gtid-consistency=ON --binlog-format=ROW
+    volumes:
+      - mysql_primary_data:/var/lib/mysql
+    networks:
+      - replication_example
+
+  replica-1:
+    image: mysql:8.0
+    container_name: replica-1
+    restart: always
+    environment:
+     MYSQL_ROOT_PASSWORD: root
+     MYSQL_DATABASE: read_replication_example
+    ports:
+     - "3308:3306"
+    depends_on:
+     - primary
+    command: --server-id=2 --relay-log=relay-bin --log-bin=mysql-bin --read-only=1 --gtid-mode=ON --enforce-gtid-consistency=ON --binlog-format=ROW
+    volumes:
+     - mysql_replica_1_data:/var/lib/mysql
+    networks:
+     - replication_example
+
+networks:
+  replication_example:
+    driver: bridge
+
+volumes:
+  proxysql_data:
+
+  mysql_primary_data:
+  mysql_replica_1_data:
