@@ -8,6 +8,10 @@ dolt creds use nq8pmsqpt6thjvi6hbtj6jprt25msddjiu62dpdp446009rsebs0
 dolt sql <<-EOSQL
     CREATE USER primary_user@'%' IDENTIFIED BY 'password';
     GRANT ALL ON *.* TO primary_user@'%';
+    CREATE USER 'monitor'@'%' IDENTIFIED BY 'monitor';
+    GRANT SELECT ON sys.* TO 'monitor'@'%';
+    GRANT SELECT ON performance_schema.* TO 'monitor'@'%';
+    GRANT USAGE, REPLICATION CLIENT ON *.* TO 'monitor'@'%';
     CALL DOLT_CLONE('coffeegoddd/read_replication_example', 'read_replication_example');
     USE read_replication_example;
     SET @@PERSIST.dolt_replicate_to_remote = 'origin';
