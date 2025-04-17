@@ -462,3 +462,436 @@ mysql> show tables;
 +------------------------------------+
 2 rows in set (0.01 sec)
 ```
+
+## Dolt
+
+This example uses [DoltHub](https://www.dolthub.com) as the remote for Dolt's remote replication. To start, ensure you have local Dolt
+credentials by running `dolt creds new` and `dolt creds use` commands. This will generate new credentials you can use to make writes to remote databases hosted on DoltHub.
+
+```bash
+proxysql_example % dolt creds new
+Credentials created successfully.
+pub key: omttg68tuuruf3f6ebclkgu5t35vu0ghktt776o6ia3utghrp87g
+dolt creds use omttg68tuuruf3f6ebclkgu5t35vu0ghktt776o6ia3utghrp87g
+```
+
+Next, be sure to create a database on DoltHub that will be used as the remote. For this example we will use [coffeegodd/read_replication_example](https://www.dolthub.com/repositories/coffeegoddd/read_replication_example), but you will need
+to use your own DoltHub database on which you have the permission to make writes. Because this example also relies on cloning the remote database to the Dolt servers running in Docker Compose, you will need to ensure the DoltHub database you create has be initialized
+and is not completely empty. We will do this step after making sure we have write perms on this database.
+
+To enable your locally generated Dolt creds to push to the DoltHub database you just created, navigate on DoltHub to Profile > Settings > Credentials. Enter the public key of the credentials into the form along with a description and click Add.
+
+Now let's initialize the database. Locally run the following commands:
+
+```bash
+mkdir read_replication_example
+cd read_replication_example
+dolt init
+dolt remote add origin coffeegoddd/read_replication_example
+dolt push origin main
+```
+
+```bash
+proxysql_example % mkdir read_replication_example
+proxysql_example % cd read_replication_example 
+read_replication_example % dolt init
+dolt remote add origin coffeegoddd/read_replication_example
+dolt push origin main
+Successfully initialized dolt data repository.
+\ Uploading...
+To https://doltremoteapi.dolthub.com/coffeegoddd/read_replication_example
+ * [new branch]          main -> main
+```
+
+You can now remove this local copy of the database, as the remote contains the necessary data.
+
+```bash
+cd ../
+rm -rf read_replication_example
+```
+
+Next, edit the ./dolt-docker-compose.yaml file so that the local path to your Dolt creds folder is correct. These are normally found at `$HOME/.dolt/creds`:
+
+```yaml
+   volumes:
+     - /abs/path/to/.dolt/creds:/root/.dolt/creds # replace with the real path to your local $HOME/.dolt/creds
+```
+
+For this example, for me, this will be:
+
+```yaml
+   volumes:
+     - /Users/dustin/.dolt/creds:/root/.dolt/creds # replace with the real path to your local $HOME/.dolt/creds
+```
+
+Save these edits.
+
+Next, start ProxySQL with a simple Dolt read replica cluster using Docker Compose by running the following command:
+
+```bash
+DOLT_CREDS_PUBLIC_KEY=omttg68tuuruf3f6ebclkgu5t35vu0ghktt776o6ia3utghrp87g docker compose -f dolt-docker-compose.yaml up
+```
+
+This will start three containers in Docker, `primary`, `replica-1`, and `proxysql`. Once the servers come up, you will need to
+configure replication between `primary` and `replica-1`. It is import to ensure the `--readonly` flag is NOT being used in the Dolt replication server,
+since the presence of this flag appears to prevent successful connections from `proxysql`.
+
+Once the servers come online, verify that `primary` and `replica-1` are successfully replicating. Connect to `primary` and execute a write, followed by a Dolt commit:
+
+```bash
+% mysql --host 0.0.0.0 --port 3307 -uroot -proot
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 2
+Server version: 8.0.33 Dolt
+
+Copyright (c) 2000, 2025, Oracle and/or its affiliates.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> use read_replication_example;
+Database changed
+mysql> create table t1 (pk int primary key);
+Query OK, 0 rows affected (0.01 sec)
+
+mysql> call dolt_commit('-Am', 'create table t1');
++----------------------------------+
+| hash                             |
++----------------------------------+
+| es6m7bbcgbk125bsaa47f7qfh94s2jd2 |
++----------------------------------+
+1 row in set (1.97 sec)
+```
+
+Then, you should see this write reflected on both the DoltHub database, and in `replica-1`.
+
+```bash
+% mysql --host 0.0.0.0 --port 3308 -uroot -proot
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 33
+Server version: 8.0.33 Dolt
+
+Copyright (c) 2000, 2025, Oracle and/or its affiliates.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> use read_replication_example;
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+mysql> show tables;
++------------------------------------+
+| Tables_in_read_replication_example |
++------------------------------------+
+| t1                                 |
++------------------------------------+
+1 row in set (0.16 sec)
+```
+
+Now that replication is working, it's time to configure ProxySQL to monitor and route to the Dolt servers.
+
+Because this is running in Docker, and ProxySQL requires the admin to connect on the same host its running on, use `docker exec` to shell into the running `proxysql` container:
+
+```bash
+% docker ps
+CONTAINER ID   IMAGE                            COMMAND                  CREATED         STATUS         PORTS                               NAMES
+ed6f39482624   proxysql/proxysql:latest         "proxysql --initial …"   5 minutes ago   Up 5 minutes   0.0.0.0:6032-6033->6032-6033/tcp    proxysql
+0d3f4b553d16   dolthub/dolt-sql-server:latest   "tini -- docker-entr…"   5 minutes ago   Up 5 minutes   33060/tcp, 0.0.0.0:3308->3306/tcp   replica-1
+1377540379d0   dolthub/dolt-sql-server:latest   "tini -- docker-entr…"   5 minutes ago   Up 5 minutes   33060/tcp, 0.0.0.0:3307->3306/tcp   primary
+% docker exec -it ed6f39482624 /bin/bash
+root@ed6f39482624:/#
+```
+
+Now, following the [configuration docs from ProxySQL](https://proxysql.com/documentation/proxysql-configuration/), connect to the admin port and enable monitoring by running the following SQL:
+
+```sql
+UPDATE global_variables SET variable_value='monitor' WHERE variable_name='mysql-monitor_username';
+UPDATE global_variables SET variable_value='monitor' WHERE variable_name='mysql-monitor_password';
+UPDATE global_variables SET variable_value='2000' WHERE variable_name IN ('mysql-monitor_connect_interval','mysql-monitor_ping_interval','mysql-monitor_read_only_interval');
+LOAD MYSQL VARIABLES TO RUNTIME;
+SAVE MYSQL VARIABLES TO DISK;
+LOAD MYSQL SERVERS TO RUNTIME;
+```
+
+```bash
+root@ed6f39482624:/#  mysql -u admin -padmin -h 127.0.0.1 -P6032 --prompt 'ProxySQL Admin> '
+Welcome to the MariaDB monitor.  Commands end with ; or \g.
+Your MySQL connection id is 1
+Server version: 8.0.11 (ProxySQL Admin Module)
+
+Copyright (c) 2000, 2018, Oracle, MariaDB Corporation Ab and others.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+ProxySQL Admin> UPDATE global_variables SET variable_value='monitor' WHERE variable_name='mysql-monitor_username';
+Query OK, 1 row affected (0.005 sec)
+
+ProxySQL Admin> UPDATE global_variables SET variable_value='monitor' WHERE variable_name='mysql-monitor_password';
+Query OK, 1 row affected (0.002 sec)
+
+ProxySQL Admin> UPDATE global_variables SET variable_value='2000' WHERE variable_name IN ('mysql-monitor_connect_interval','mysql-monitor_ping_interval','mysql-monitor_read_only_interval');
+Query OK, 3 rows affected (0.002 sec)
+
+ProxySQL Admin> LOAD MYSQL VARIABLES TO RUNTIME;
+Query OK, 0 rows affected (0.002 sec)
+
+ProxySQL Admin> SAVE MYSQL VARIABLES TO DISK;
+Query OK, 167 rows affected (0.007 sec)
+
+ProxySQL Admin> LOAD MYSQL SERVERS TO RUNTIME;
+Query OK, 0 rows affected (0.010 sec)
+```
+
+Next, check that the backend servers are healthy:
+
+```bash
+ProxySQL Admin> SELECT * FROM mysql_servers;
++--------------+-----------+------+-----------+--------+--------+-------------+-----------------+---------------------+---------+----------------+---------+
+| hostgroup_id | hostname  | port | gtid_port | status | weight | compression | max_connections | max_replication_lag | use_ssl | max_latency_ms | comment |
++--------------+-----------+------+-----------+--------+--------+-------------+-----------------+---------------------+---------+----------------+---------+
+| 10           | primary   | 3306 | 0         | ONLINE | 1      | 0           | 100             | 0                   | 0       | 0              |         |
+| 20           | replica-1 | 3306 | 0         | ONLINE | 1      | 0           | 100             | 0                   | 0       | 0              |         |
++--------------+-----------+------+-----------+--------+--------+-------------+-----------------+---------------------+---------+----------------+---------+
+2 rows in set (0.002 sec)
+
+ProxySQL Admin> SHOW TABLES FROM monitor;
++--------------------------------------+
+| tables                               |
++--------------------------------------+
+| mysql_server_aws_aurora_check_status |
+| mysql_server_aws_aurora_failovers    |
+| mysql_server_aws_aurora_log          |
+| mysql_server_connect_log             |
+| mysql_server_galera_log              |
+| mysql_server_group_replication_log   |
+| mysql_server_ping_log                |
+| mysql_server_read_only_log           |
+| mysql_server_replication_lag_log     |
++--------------------------------------+
+9 rows in set (0.001 sec)
+
+ProxySQL Admin> SELECT * FROM monitor.mysql_server_connect_log ORDER BY time_start_us DESC LIMIT 3;
++----------+------+------------------+-------------------------+---------------+
+| hostname | port | time_start_us    | connect_success_time_us | connect_error |
++----------+------+------------------+-------------------------+---------------+
+| primary  | 3306 | 1744848954738189 | 3865                    | NULL          |
+| primary  | 3306 | 1744848952735944 | 2220                    | NULL          |
+| primary  | 3306 | 1744848950732634 | 2081                    | NULL          |
++----------+------+------------------+-------------------------+---------------+
+3 rows in set (0.002 sec)
+
+ProxySQL Admin> SELECT * FROM monitor.mysql_server_ping_log ORDER BY time_start_us DESC LIMIT 3;
++-----------+------+------------------+----------------------+---------------------------------------------------------+
+| hostname  | port | time_start_us    | ping_success_time_us | ping_error                                              |
++-----------+------+------------------+----------------------+---------------------------------------------------------+
+| replica-1 | 3306 | 1744848960498939 | 0                    | No authentication methods available for authentication. |
+| primary   | 3306 | 1744848960498546 | 982                  | NULL                                                    |
+| replica-1 | 3306 | 1744848958495705 | 0                    | No authentication methods available for authentication. |
++-----------+------+------------------+----------------------+---------------------------------------------------------+
+3 rows in set (0.001 sec)
+```
+
+Next, run the following `INSERT` to configure the replication hostgroups in ProxySQL:
+
+```sql
+INSERT INTO mysql_replication_hostgroups (writer_hostgroup,reader_hostgroup,comment) VALUES (10,20,'cluster1');
+LOAD MYSQL SERVERS TO RUNTIME;
+```
+
+```bash
+ProxySQL Admin> INSERT INTO mysql_replication_hostgroups (writer_hostgroup,reader_hostgroup,comment) VALUES (10,20,'cluster1');
+Query OK, 1 row affected (0.003 sec)
+
+ProxySQL Admin> LOAD MYSQL SERVERS TO RUNTIME;
+Query OK, 0 rows affected (0.007 sec)
+```
+
+And verify the read-only configuration of your backends before persisting the changes to disk:
+
+```bash
+ProxySQL Admin> SELECT * FROM monitor.mysql_server_read_only_log ORDER BY time_start_us DESC LIMIT 3;
++----------+------+------------------+-----------------+-----------+-------+
+| hostname | port | time_start_us    | success_time_us | read_only | error |
++----------+------+------------------+-----------------+-----------+-------+
+| primary  | 3306 | 1744849302654031 | 3034            | 0         | NULL  |
+| primary  | 3306 | 1744849300650285 | 2555            | 0         | NULL  |
+| primary  | 3306 | 1744849298648611 | 3627            | 0         | NULL  |
++----------+------+------------------+-----------------+-----------+-------+
+3 rows in set (0.002 sec)
+
+ProxySQL Admin> SELECT * FROM mysql_servers;
++--------------+-----------+------+-----------+--------+--------+-------------+-----------------+---------------------+---------+----------------+---------+
+| hostgroup_id | hostname  | port | gtid_port | status | weight | compression | max_connections | max_replication_lag | use_ssl | max_latency_ms | comment |
++--------------+-----------+------+-----------+--------+--------+-------------+-----------------+---------------------+---------+----------------+---------+
+| 10           | primary   | 3306 | 0         | ONLINE | 1      | 0           | 100             | 0                   | 0       | 0              |         |
+| 20           | replica-1 | 3306 | 0         | ONLINE | 1      | 0           | 100             | 0                   | 0       | 0              |         |
++--------------+-----------+------+-----------+--------+--------+-------------+-----------------+---------------------+---------+----------------+---------+
+2 rows in set (0.001 sec)
+
+ProxySQL Admin> SAVE MYSQL SERVERS TO DISK;
+Query OK, 0 rows affected (0.032 sec)
+
+ProxySQL Admin> SAVE MYSQL VARIABLES TO DISK;
+Query OK, 167 rows affected (0.008 sec)
+```
+
+Finally, your cluster should be working properly, and you can begin adding credentials for end users of your service.
+
+To do so, connect to the primary and run the following SQL to create a sample user:
+
+```sql
+CREATE USER 'stnduser'@'%' IDENTIFIED BY 'stnduser';
+GRANT ALL PRIVILEGES ON *.* TO 'stnduser'@'%';
+```
+
+```bash
+proxysql_example % mysql --host 0.0.0.0 --port 3307 -uroot -proot
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 307
+Server version: 8.0.33 Dolt
+
+Copyright (c) 2000, 2025, Oracle and/or its affiliates.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> CREATE USER 'stnduser'@'%' IDENTIFIED BY 'stnduser';
+Query OK, 0 rows affected (0.01 sec)
+
+mysql> GRANT ALL PRIVILEGES ON *.* TO 'stnduser'@'%';
+Query OK, 0 rows affected (0.01 sec)
+```
+
+Then return to the ProxySQL admin shell, and run the following SQL to register this user:
+
+```sql
+INSERT INTO mysql_users(username,password,default_hostgroup) VALUES ('stnduser','stnduser',1);
+LOAD MYSQL USERS TO RUNTIME;
+SAVE MYSQL USERS TO DISK;
+```
+
+```bash
+ProxySQL Admin> INSERT INTO mysql_users(username,password,default_hostgroup) VALUES ('stnduser','stnduser',1);
+Query OK, 1 row affected (0.001 sec)
+
+ProxySQL Admin> LOAD MYSQL USERS TO RUNTIME;
+Query OK, 0 rows affected (0.001 sec)
+
+ProxySQL Admin> SAVE MYSQL USERS TO DISK;
+Query OK, 0 rows affected (0.016 sec)
+```
+
+You can now connect to ProxySQL as your created user on its client port `6033`. Once connected, make a new write:
+
+```bash
+proxysql_example % mysql --host 0.0.0.0 --port 6033 -ustnduser -pstnduser
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 2
+Server version: 8.0.11 (ProxySQL)
+
+Copyright (c) 2000, 2025, Oracle and/or its affiliates.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> show tables;
++------------------------------------+
+| Tables_in_read_replication_example |
++------------------------------------+
+| t1                                 |
++------------------------------------+
+1 row in set (0.02 sec)
+
+mysql> create table t2 (pk int primary key);
+Query OK, 0 rows affected (0.04 sec)
+
+mysql> call dolt_commit('-Am', 'create table t2');
++----------------------------------+
+| hash                             |
++----------------------------------+
+| 737cn5v97d8eq52loibo7gsrh4vqqa0k |
++----------------------------------+
+1 row in set (1.57 sec)
+```
+
+Verify that both your `primary` and `replica-1` contain the write:
+
+```bash
+proxysql_example % mysql --host 0.0.0.0 --port 3307 -uroot -proot        
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 460
+Server version: 8.0.33 Dolt
+
+Copyright (c) 2000, 2025, Oracle and/or its affiliates.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> use read_replication_example;
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+mysql> show tables;
++------------------------------------+
+| Tables_in_read_replication_example |
++------------------------------------+
+| t1                                 |
+| t2                                 |
++------------------------------------+
+2 rows in set (0.01 sec)
+```
+
+```bash
+proxysql_example % mysql --host 0.0.0.0 --port 3308 -uroot -proot
+mysql: [Warning] Using a password on the command line interface can be insecure.
+Welcome to the MySQL monitor.  Commands end with ; or \g.
+Your MySQL connection id is 504
+Server version: 8.0.42 MySQL Community Server - GPL
+
+Copyright (c) 2000, 2025, Oracle and/or its affiliates.
+
+Oracle is a registered trademark of Oracle Corporation and/or its
+affiliates. Other names may be trademarks of their respective
+owners.
+
+Type 'help;' or '\h' for help. Type '\c' to clear the current input statement.
+
+mysql> use read_replication_example;
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+mysql> show tables;
++------------------------------------+
+| Tables_in_read_replication_example |
++------------------------------------+
+| t1                                 |
+| t2                                 |
++------------------------------------+
+2 rows in set (0.16 sec)
+```
+
+You should also see the write on your DoltHub remote database.
