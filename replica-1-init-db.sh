@@ -16,4 +16,5 @@ dolt sql <<-EOSQL
     USE read_replication_example;
     SET @@PERSIST.dolt_read_replica_remote = 'origin';
     SET @@PERSIST.dolt_replicate_all_heads = 1;
+    SET @@persist.read_only=1
 EOSQL
