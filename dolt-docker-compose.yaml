@@ -23,7 +23,7 @@ services:
    ports:
      - "3307:3306"  # exposes primary on localhost:3307
    volumes:
-     - /Users/dustin/.dolt/creds:/root/.dolt/creds # replace with the real path to your local $HOME/.dolt/creds
+     - /path/to/your/.dolt/creds:/root/.dolt/creds # replace with the real path to your local $HOME/.dolt/creds
      - dolt_primary_data:/var/lib/dolt
      - dolt_primary_dolt_config:/etc/dolt/doltcfg.d
      - dolt_primary_server_config:/etc/dolt/servercfg.d
@@ -44,7 +44,7 @@ services:
    ports:
      - "3308:3306"  # exposes primary on localhost:3308
    volumes:
-     - /Users/dustin/.dolt/creds:/root/.dolt/creds # replace with the real path to your local $HOME/.dolt/creds
+     - /path/to/your/.dolt/creds:/root/.dolt/creds # replace with the real path to your local $HOME/.dolt/creds
      - dolt_replica_1_data:/var/lib/dolt
      - dolt_replica_1_dolt_config:/etc/dolt/doltcfg.d
      - dolt_replica_1_server_config:/etc/dolt/servercfg.d
